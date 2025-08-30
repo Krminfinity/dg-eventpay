@@ -1,0 +1,368 @@
+openapi: 3.1.0
+info:
+  title: DG EventPay API
+  version: 0.1.0
+  description: MVP用のAPI仕様（ドラフト）
+servers:
+  - url: https://api.dev.eventpay.example.com
+  - url: https://api.stg.eventpay.example.com
+  - url: https://api.eventpay.example.com
+security:
+  - bearerAuth: []
+paths:
+  /events:
+    post:
+      summary: Create Event
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /events/{eventId}:
+    get:
+      summary: Get Event
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Update Event
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEventRequest'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Event' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{eventId}/date-options:
+    post:
+      summary: Add date options
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                options:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/DateOptionInput' }
+              required: [options]
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /events/{eventId}/confirm-date:
+    post:
+      summary: Confirm selected date option
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                option_id: { type: string, format: uuid }
+              required: [option_id]
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /events/{eventId}/invite:
+    post:
+      summary: Invite participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                emails:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: email }
+              required: [emails]
+      responses:
+        '202': { description: Accepted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /events/{eventId}/rsvp:
+    post:
+      summary: RSVP submit
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RsvpRequest'
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Rsvp' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /events/{eventId}/payment-intents:
+    post:
+      summary: Create payment intent for RSVP
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rsvp_id: { type: string, format: uuid }
+                method: { type: string, enum: [card, qr, convenience] }
+              required: [rsvp_id, method]
+      responses:
+        '201':
+          description: Created
+          headers:
+            Idempotency-Key:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /payments/{paymentId}:
+    get:
+      summary: Get payment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /payments/{paymentId}/refund:
+    post:
+      summary: Create refund
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: integer, minimum: 1 }
+                reason: { type: string, maxLength: 200 }
+              required: [amount]
+      responses:
+        '202': { description: Accepted, content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /webhooks/veritrans:
+    post:
+      summary: Webhook receiver
+      security: []
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /webhooks/psp:
+    post:
+      summary: Webhook receiver (PSP: Stripe)
+      security: []
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /payouts:
+    get:
+      summary: List payouts
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: OK }
+  /payouts/{payoutId}:
+    get:
+      summary: Get payout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+        trace_id: { type: string }
+      required: [code, message]
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        fee_amount: { type: integer }
+        fee_currency: { type: string, enum: [JPY] }
+        visibility: { type: string, enum: [public, link_only, private] }
+        status: { type: string, enum: [draft, published, scheduled, in_progress, finished, canceled] }
+        deadline_at: { type: string, format: date-time }
+        confirmed_at: { type: string, format: date-time, nullable: true }
+        share_url: { type: string }
+      required: [id, title, fee_amount, fee_currency, status]
+    CreateEventRequest:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 4000 }
+        fee_amount: { type: integer, minimum: 0 }
+        fee_currency: { type: string, enum: [JPY] }
+        visibility: { type: string, enum: [public, link_only, private] }
+        deadline_at: { type: string, format: date-time }
+        confirmation_deadline_at: { type: string, format: date-time, nullable: true }
+        min_participants: { type: integer, minimum: 1, nullable: true }
+        min_total_amount: { type: integer, minimum: 0, nullable: true }
+        cancel_policy: { type: string, maxLength: 1000 }
+        date_options:
+          type: array
+          items: { $ref: '#/components/schemas/DateOptionInput' }
+      required: [title, fee_amount, fee_currency, visibility]
+    UpdateEventRequest:
+      type: object
+      properties:
+        title: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 4000 }
+        fee_amount: { type: integer, minimum: 0 }
+        visibility: { type: string, enum: [public, link_only, private] }
+        deadline_at: { type: string, format: date-time }
+        confirmation_deadline_at: { type: string, format: date-time, nullable: true }
+        min_participants: { type: integer, minimum: 1, nullable: true }
+        min_total_amount: { type: integer, minimum: 0, nullable: true }
+        cancel_policy: { type: string, maxLength: 1000 }
+    DateOptionInput:
+      type: object
+      properties:
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        note: { type: string, maxLength: 200 }
+      required: [starts_at, ends_at]
+    RsvpRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email }
+        status: { type: string, enum: [going, declined] }
+      required: [name, email, status]
+    Rsvp:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        participant_name: { type: string }
+        participant_email: { type: string, format: email }
+        status: { type: string, enum: [invited, going, declined, waitlist, canceled] }
+      required: [id, event_id, participant_name, participant_email, status]
+    PaymentIntent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        rsvp_id: { type: string, format: uuid }
+        amount: { type: integer }
+        currency: { type: string, enum: [JPY] }
+        method: { type: string, enum: [card, qr, convenience] }
+        status: { type: string, enum: [requires_payment, processing, succeeded, canceled, expired, failed] }
+        hosted_url: { type: string, nullable: true }
+      required: [id, event_id, rsvp_id, amount, currency, method, status]
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payment_intent_id: { type: string, format: uuid }
+        amount_captured: { type: integer }
+        currency: { type: string, enum: [JPY] }
+        method: { type: string }
+        status: { type: string, enum: [authorized, captured, failed, chargeback] }
+        authorized_at: { type: string, format: date-time, nullable: true }
+        captured_at: { type: string, format: date-time, nullable: true }
+      required: [id, payment_intent_id, amount_captured, currency, method, status]
+    Refund:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        amount: { type: integer }
+        status: { type: string, enum: [requested, processing, succeeded, failed] }
+        processed_at: { type: string, format: date-time, nullable: true }
+      required: [id, payment_id, amount, status]

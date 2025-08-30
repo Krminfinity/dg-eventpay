@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start API (PORT from .env)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"cd 'api'; if (-not (Test-Path .env)) { Copy-Item .env.example .env -Force }; npm run dev"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Start Tunnel (use .env PORT)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"cd 'api'; npm install --no-audit --no-fund --loglevel=error; npm run tunnel"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
