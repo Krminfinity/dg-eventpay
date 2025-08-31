@@ -5,25 +5,78 @@ export function komojuAdapter(): PSPAdapter {
   const secret = process.env.KOMOJU_SECRET_KEY || '';
   const webhookSecret = process.env.KOMOJU_WEBHOOK_SECRET || '';
   const skipVerify = (process.env.KOMOJU_WEBHOOK_SKIP_VERIFY || '').toLowerCase() === 'true';
+  const apiVersion = process.env.KOMOJU_API_VERSION || '2025-01-28';
 
   return {
     async createCheckoutSession(args: CreateCheckoutSessionArgs): Promise<CreateCheckoutSessionResult> {
-      // NOTE: KOMOJU Hostedの実API呼び出しは未実装（MVP雛形）。
-      // 実装時はsecretを用いHTTPSでセッション作成し、返却URLを受け取る。
-      const fakeId = `pi_${Date.now()}`;
-      const fakeUrl = `https://checkout.komoju.com/sessions/${fakeId}`;
-      return { intentId: fakeId, url: fakeUrl };
+      if (!secret) throw new Error('KOMOJU_SECRET_KEY is required');
+      
+      const sessionData = {
+        amount: args.amount,
+        currency: args.currency,
+        external_order_num: `${args.eventId}-${args.rsvpId}`,
+        payment_types: [mapPaymentMethod(args.method)],
+        metadata: {
+          event_id: args.eventId,
+          rsvp_id: args.rsvpId
+        }
+      };
+
+      const response = await fetch('https://komoju.com/api/v1/sessions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(secret + ':').toString('base64')}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...(apiVersion && { 'Komoju-Version': apiVersion })
+        },
+        body: JSON.stringify(sessionData)
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`KOMOJU API error: ${response.status} ${error}`);
+      }
+
+      const session = await response.json();
+      return { 
+        intentId: session.id, 
+        url: session.session_url 
+      };
     },
 
     async refundPayment(args: RefundArgs): Promise<RefundResult> {
-      // NOTE: 実装時にKOMOJUのRefund APIを呼び出す。
-      const fakeId = `re_${Date.now()}`;
-      return { refundId: fakeId };
+      if (!secret) throw new Error('KOMOJU_SECRET_KEY is required');
+
+      const refundData = {
+        amount: args.amount,
+        description: args.reason || 'Refund request'
+      };
+
+      const response = await fetch(`https://komoju.com/api/v1/payments/${args.paymentId}/refund`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(secret + ':').toString('base64')}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...(apiVersion && { 'Komoju-Version': apiVersion })
+        },
+        body: JSON.stringify(refundData)
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`KOMOJU refund error: ${response.status} ${error}`);
+      }
+
+      const refund = await response.json();
+      return { refundId: refund.id };
     },
 
     async verifyWebhook({ signature, payload }: WebhookVerifyArgs): Promise<PSPEvent> {
       // 初回接続確認などで検証をスキップ可能にするフラグ
       if (skipVerify) {
+        console.log('⚠️  Webhook signature verification SKIPPED');
         const json = JSON.parse(payload.toString('utf-8'));
         return {
           id: json.id || `evt_${Date.now()}`,
@@ -32,11 +85,23 @@ export function komojuAdapter(): PSPAdapter {
         };
       }
 
-      // NOTE: 実装時にKOMOJUの正式仕様へ置換予定。暫定でHMAC検証。
+      // KOMOJU公式署名検証（HMAC-SHA256）
       if (!webhookSecret) throw new Error('KOMOJU_WEBHOOK_SECRET not set');
       if (!signature) throw new Error('missing signature');
-      const hmac = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
-      if (!signature.includes(hmac)) throw new Error('invalid signature');
+      
+      // KOMOJUのSignatureヘッダーは "sha256=hash" または "hash" 形式
+      const normalizedSignature = signature.startsWith('sha256=') ? signature : `sha256=${signature}`;
+      const expectedSignature = `sha256=${crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex')}`;
+
+      console.log('🔐 Webhook signature verification:');
+      console.log('  Received:', normalizedSignature);
+      console.log('  Expected:', expectedSignature);
+      console.log('  Match:', normalizedSignature === expectedSignature);
+
+      if (normalizedSignature !== expectedSignature) {
+        throw new Error('invalid signature');
+      }
+
       const json = JSON.parse(payload.toString('utf-8'));
       const normalized: PSPEvent = {
         id: json.id || `evt_${Date.now()}`,
@@ -46,6 +111,16 @@ export function komojuAdapter(): PSPAdapter {
       return normalized;
     }
   };
+}
+
+// 決済方法をKOMOJUのpayment_typesにマッピング
+function mapPaymentMethod(method: string): string {
+  switch (method) {
+    case 'card': return 'credit_card';
+    case 'paypay': return 'paypay';
+    case 'convenience': return 'konbini';
+    default: return 'credit_card';
+  }
 }
 
 function normalizeType(providerType: string): string {

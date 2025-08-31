@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { router as paymentsRouter } from './routes/payments';
 import { router as webhooksRouter } from './routes/webhooks';
+import { router as testRouter } from './routes/test';
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req: Request, res: Response) => res.json({ ok: true }));
 app.use(paymentsRouter);
 app.use(webhooksRouter);
+app.use(testRouter);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {
