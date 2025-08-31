@@ -11,17 +11,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Event {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  fee         Int      // 料金（円）
-  currency    String   @default("JPY")
-  status      String   @default("active") // active, cancelled, completed
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String?  // ハッシュ化されたパスワード
+  status       String   @default("active") // active, suspended, deleted
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations - 将来の拡張用
+  organizerProfile OrganizerProfile?
+}
+
+model OrganizerProfile {
+  id       String @id @default(cuid())
+  userId   String @unique
+  type     String @default("individual") // individual, corporate
+  orgName  String?
+  kycStatus String @default("pending") // pending, verified, rejected
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
+  user   User    @relation(fields: [userId], references: [id])
+  events Event[]
+}
+
+model Event {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  fee             Int      // 料金（円）
+  currency        String   @default("JPY")
+  status          String   @default("active") // active, cancelled, completed
+  organizerProfileId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  organizerProfile OrganizerProfile? @relation(fields: [organizerProfileId], references: [id])
   rsvps           EventRsvp[]
   paymentIntents  PaymentIntent[]
 }

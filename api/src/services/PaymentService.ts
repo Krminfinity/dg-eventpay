@@ -16,6 +16,15 @@ export interface CreatePaymentIntentResult {
 }
 
 export class PaymentService {
+  static async listPayments() {
+    return prisma.payment.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        paymentIntent: true,
+      },
+    });
+  }
+
   static async createPaymentIntent(args: CreatePaymentIntentArgs): Promise<CreatePaymentIntentResult> {
     // 1. イベント・RSVPの存在確認
     const event = await prisma.event.findUnique({

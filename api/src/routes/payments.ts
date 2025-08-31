@@ -5,6 +5,16 @@ import { PaymentService } from '../services/PaymentService';
 
 export const router = Router();
 
+// GET /payments - 決済履歴一覧
+router.get('/', async (req, res) => {
+  try {
+    const payments = await PaymentService.listPayments();
+    res.json({ payments });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
 // POST /events/:eventId/payment-intents
 router.post('/events/:eventId/payment-intents', withIdempotency, async (req, res) => {
   const { eventId } = req.params;
