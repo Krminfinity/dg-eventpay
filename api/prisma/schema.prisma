@@ -1,0 +1,142 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String?  // ハッシュ化されたパスワード
+  status       String   @default("active") // active, suspended, deleted
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations - 将来の拡張用
+  organizerProfile OrganizerProfile?
+}
+
+model OrganizerProfile {
+  id       String @id @default(cuid())
+  userId   String @unique
+  type     String @default("individual") // individual, corporate
+  orgName  String?
+  kycStatus String @default("pending") // pending, verified, rejected
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user   User    @relation(fields: [userId], references: [id])
+  events Event[]
+}
+
+model Event {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  fee             Int      // 料金（円）
+  currency        String   @default("JPY")
+  status          String   @default("active") // active, cancelled, completed
+  organizerProfileId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  organizerProfile OrganizerProfile? @relation(fields: [organizerProfileId], references: [id])
+  rsvps           EventRsvp[]
+  paymentIntents  PaymentIntent[]
+}
+
+model EventRsvp {
+  id        String   @id @default(cuid())
+  eventId   String
+  name      String
+  email     String
+  status    String   @default("pending") // pending, confirmed, cancelled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  event           Event           @relation(fields: [eventId], references: [id])
+  paymentIntents  PaymentIntent[]
+}
+
+model PaymentIntent {
+  id              String   @id @default(cuid())
+  eventId         String
+  rsvpId          String
+  pspIntentId     String   @unique // PSP側のintent/session ID
+  amount          Int
+  currency        String
+  method          String   // card, paypay, convenience
+  status          String   @default("created") // created, processing, succeeded, failed, cancelled
+  hostedUrl       String?  // チェックアウトURL
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  event     Event     @relation(fields: [eventId], references: [id])
+  rsvp      EventRsvp @relation(fields: [rsvpId], references: [id])
+  payments  Payment[]
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  paymentIntentId String
+  pspPaymentId    String   @unique // PSP側のpayment ID
+  amount          Int
+  currency        String
+  status          String   // succeeded, failed, refunded
+  pspRawData      String?  // JSON形式でPSP生データを保存
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  paymentIntent PaymentIntent @relation(fields: [paymentIntentId], references: [id])
+  refunds       Refund[]
+}
+
+model Refund {
+  id           String   @id @default(cuid())
+  paymentId    String
+  pspRefundId  String   @unique // PSP側のrefund ID
+  amount       Int
+  currency     String
+  reason       String?
+  status       String   // requested, succeeded, failed
+  pspRawData   String?  // JSON形式でPSP生データを保存
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  payment Payment @relation(fields: [paymentId], references: [id])
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  pspEventId  String   @unique // PSP側のevent ID
+  eventType   String   // 正規化後のイベントタイプ
+  processed   Boolean  @default(false)
+  rawData     String   // JSON形式でWebhook生データを保存
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+}
+
+// 幂等性制御用テーブル
+model IdempotencyKey {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  endpoint    String   // どのエンドポイントでの実行か
+  responseData String? // 成功時のレスポンスをキャッシュ
+  status      String   @default("processing") // processing, completed, failed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
